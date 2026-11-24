@@ -1,7 +1,7 @@
 {
-  "name": "cr7-panel",
+  "name": "cristiano-ronaldo-panel",
   "version": "1.0.0",
-  "description": "CR7 Control Panel & Key System",
+  "description": "CR7 Web Panel",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

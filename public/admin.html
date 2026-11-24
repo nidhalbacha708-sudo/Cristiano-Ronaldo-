@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة التحكم الشاملة - CR7</title>
+    <style>
+        body { background: #0b0b0b; color: #fff; font-family: Tahoma, sans-serif; text-align: center; padding: 20px; margin: 0; }
+        .container { max-width: 450px; margin: 0 auto; }
+        .card { background: #161616; padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #222; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        h2 { color: #ff0033; margin-top: 0; font-size: 22px; }
+        label { display: block; margin: 10px 0 5px; text-align: right; font-size: 14px; color: #aaa; }
+        select, input[type="text"], textarea { width: 100%; padding: 12px; margin-bottom: 10px; border-radius: 6px; border: 1px solid #333; background: #0d0d0d; color: #fff; font-size: 15px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; border-radius: 6px; border: none; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn-primary { background: #ff0033; color: #fff; }
+        .btn-primary:hover { background: #cc0029; }
+        .btn-toggle { background: #333; color: #fff; margin-top: 5px; }
+        .btn-toggle.active { background: #00aa55; }
+        .result-box { margin-top: 15px; background: #000; padding: 12px; color: #00ff66; word-break: break-all; border-radius: 6px; font-family: monospace; font-size: 16px; border: 1px dashed #00ff66; }
+        .status-badge { display: inline-block; padding: 5px 10px; border-radius: 4px; font-size: 13px; margin-bottom: 10px; }
+        .status-off { background: rgba(0, 170, 85, 0.2); color: #00ff66; }
+        .status-on { background: rgba(255, 0, 51, 0.2); color: #ff0033; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- قسم توليد الأكواد -->
+        <div class="card">
+            <h2>مولد أكواد CR7</h2>
+            <label>اختر مدة صلاحية الكود:</label>
+            <select id="duration">
+                <option value="1">ساعة واحدة (1 Hour)</option>
+                <option value="2">ساعتين (2 Hours)</option>
+                <option value="24">24 ساعة - يوم واحد</option>
+                <option value="72">3 أيام</option>
+                <option value="168">أسبوع كامل (7 Days)</option>
+                <option value="720">شهر كامل (30 Days)</option>
+            </select>
+            <button class="btn-primary" onclick="generateKey()">توليد مفتاح جديد 🔑</button>
+            
+            <div class="result-box" id="keyResult">انقر فوق توليد لإظهار الكود...</div>
+        </div>
+
+        <!-- قسم إدارة الصيانة -->
+        <div class="card">
+            <h2>لوحة إدارة الصيانة</h2>
+            <div id="statusBadge" class="status-badge status-off">حالة الموقع: يعمل بشكل طبيعي</div>
+            
+            <label>رسالة الصيانة التي ستظهر للمستخدمين:</label>
+            <textarea id="maintenanceMsg" rows="3">الموقع تحت الصيانة حالياً. عودوا قريباً!</textarea>
+            
+            <button id="maintenanceBtn" class="btn-toggle" onclick="toggleMaintenance()">تفعيل وضع الصيانة 🛑</button>
+        </div>
+    </div>
+
+    <script>
+        let isMaintenanceActive = false;
+
+        // جلب الإعدادات الحالية عند فتح الصفحة
+        async function loadSettings() {
+            try {
+                const res = await fetch('/api/admin/settings');
+                const data = await res.json();
+                if(data.success) {
+                    isMaintenanceActive = data.siteSettings.maintenance;
+                    document.getElementById('maintenanceMsg').value = data.siteSettings.message;
+                    updateMaintenanceUI();
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        // توليد كود جديد
+        async function generateKey() {
+            const hours = document.getElementById('duration').value;
+            const res = await fetch('/api/admin/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ hours: parseInt(hours) })
+            });
+            const data = await res.json();
+            if(data.success) {
+                document.getElementById('keyResult').innerText = data.key;
+            }
+        }
+
+        // تبديل حالة الصيانة
+        async function toggleMaintenance() {
+            isMaintenanceActive = !isMaintenanceActive;
+            const message = document.getElementById('maintenanceMsg').value;
+
+            const res = await fetch('/api/admin/maintenance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ maintenance: isMaintenanceActive, message: message })
+            });
+            const data = await res.json();
+            if(data.success) {
+                updateMaintenanceUI();
+                alert(isMaintenanceActive ? "تم تفعيل وضع الصيانة بنجاح وإغلاق الموقع!" : "تم إيقاف الصيانة وفتح الموقع للمستخدمين.");
+            }
+        }
+
+        function updateMaintenanceUI() {
+            const btn = document.getElementById('maintenanceBtn');
+            const badge = document.getElementById('statusBadge');
+            if(isMaintenanceActive) {
+                btn.innerText = "إلغاء الصيانة (فتح الموقع) ✅";
+                btn.classList.add('active');
+                badge.innerText = "حالة الموقع: متوقف للصيانة 🛑";
+                badge.className = "status-badge status-on";
+            } else {
+                btn.innerText = "تفعيل وضع الصيانة 🛑";
+                btn.classList.remove('active');
+                badge.innerText = "حالة الموقع: يعمل بشكل طبيعي ✅";
+                badge.className = "status-badge status-off";
+            }
+        }
+
+        loadSettings();
+    </script>
+</body>
+  </html>

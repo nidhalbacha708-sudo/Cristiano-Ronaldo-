@@ -712,4 +712,143 @@ document.addEventListener('click',e=>{if(e.target.closest('#logout')){stop();cod
   requestAnimationFrame(function(){requestAnimationFrame(function(){chart.classList.remove('drag');});});
 })();
 </script>
+   <div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  // 1. إعدادات اللغة والواجهة
+  const shell = document.getElementById('shell');
+  const langBtn = document.getElementById('lang');
+  let isAr = false;
+
+  const dict = {
+    en: { access: "ACCESS REQUIRED", locked: "LOCKED", licenseKey: "LICENSE KEY", auth: "AUTHENTICATE", note: "A valid license unlocks the engine. Keys are bound to one device.", control: "CONTROL", modules: "MODULES", system: "SYSTEM" },
+    ar: { access: "مطلوب تصريح الدخول", locked: "مقفل", licenseKey: "مفتاح الترخيص", auth: "تسجيل الدخول", note: "المفتاح الصالح يفتح النظام. الأكواد مرتبطة بجهاز واحد فقط.", control: "التحكم", modules: "الوحدات", system: "النظام" }
+  };
+
+  langBtn?.addEventListener('click', () => {
+    isAr = !isAr;
+    shell.classList.toggle('ar', isAr);
+    shell.dir = isAr ? 'rtl' : 'ltr';
+    langBtn.textContent = isAr ? 'AR' : 'EN';
+    document.querySelectorAll('[data-i]').forEach(el => {
+      const k = el.getAttribute('data-i');
+      if (dict[isAr ? 'ar' : 'en'][k]) el.textContent = dict[isAr ? 'ar' : 'en'][k];
+    });
+  });
+
+  // 2. التنقل بين التبويبات (Tabs)
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.setAttribute('aria-selected', 'false'));
+      document.querySelectorAll('.panel').forEach(p => p.hidden = true);
+      tab.setAttribute('aria-selected', 'true');
+      const target = document.getElementById(tab.getAttribute('aria-controls'));
+      if (target) target.hidden = false;
+    });
+  });
+
+  // 3. مطابقة وضع الصيانة مع admin.html
+  async function checkMaintenance() {
+    try {
+      const res = await fetch('/api/admin/settings');
+      const data = await res.json();
+      if (data.success && data.siteSettings) {
+        const mbar = document.getElementById('mbar');
+        const mmsg = document.getElementById('mmsg');
+        if (data.siteSettings.maintenance) {
+          mmsg.textContent = data.siteSettings.message || 'الموقع تحت الصيانة حالياً.';
+          mbar.hidden = false;
+          document.body.classList.add('maint');
+        } else {
+          mbar.hidden = true;
+          document.body.classList.remove('maint');
+        }
+      }
+    } catch (e) {
+      console.error('Maintenance check error:', e);
+    }
+  }
+
+  // فحص الصيانة عند الفتح وكل 10 ثوانٍ
+  checkMaintenance();
+  setInterval(checkMaintenance, 10000);
+
+  // 4. معرف الجهاز الفريد (لربط الكود بجهاز واحد)
+  let deviceId = localStorage.getItem('cr7_device_id');
+  if (!deviceId) {
+    deviceId = 'DEV-' + Math.random().toString(36).substring(2, 12).toUpperCase();
+    localStorage.setItem('cr7_device_id', deviceId);
+  }
+
+  // 5. تسجيل الدخول ومطابقة الكود المولد من admin.html
+  const loginForm = document.getElementById('loginForm');
+  const keyInput = document.getElementById('key');
+  const authBtn = document.getElementById('authBtn');
+  const spin = document.getElementById('spin');
+  const errEl = document.getElementById('err');
+
+  function unlockApp() {
+    document.getElementById('login').style.display = 'none';
+    const app = document.getElementById('app');
+    app.hidden = false;
+    app.style.display = 'flex';
+  }
+
+  // التحقق التلقائي إذا كان المستخدم مسجلاً مسبقاً
+  const savedKey = localStorage.getItem('cr7_license_key');
+  if (savedKey) {
+    verifyKey(savedKey, true);
+  }
+
+  async function verifyKey(key, silent = false) {
+    if (!silent) {
+      errEl.textContent = '';
+      keyInput.classList.remove('bad');
+      authBtn.disabled = true;
+      spin.hidden = false;
+    }
+
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: key.trim(), deviceId })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        localStorage.setItem('cr7_license_key', key.trim());
+        unlockApp();
+      } else {
+        localStorage.removeItem('cr7_license_key');
+        if (!silent) {
+          keyInput.classList.add('bad');
+          errEl.textContent = data.message || (isAr ? 'الكود غير صالح أو منتهي الصلاحية' : 'Invalid or expired license key');
+        }
+      }
+    } catch (e) {
+      if (!silent) errEl.textContent = isAr ? 'خطأ في الاتصال بالسيرفر' : 'Server connection error';
+    } finally {
+      if (!silent) {
+        authBtn.disabled = false;
+        spin.hidden = true;
+      }
+    }
+  }
+
+  loginForm?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const val = keyInput.value.trim();
+    if (!val) {
+      keyInput.classList.add('bad');
+      errEl.textContent = isAr ? 'الرجاء إدخال الكود' : 'Please enter a license key';
+      return;
+    }
+    verifyKey(val);
+  });
+})();
+</script>
+</body>
+</html>
 </body></html>

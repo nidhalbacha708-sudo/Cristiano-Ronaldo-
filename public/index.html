@@ -593,21 +593,19 @@ async function resync(){
 document.addEventListener('submit',async e=>{
   if(!e.target||e.target.id!=='loginForm')return;
   e.preventDefault();e.stopImmediatePropagation();if(busy)return;
-  const ts=window.CR7TS?CR7TS.token():'';
-  if(!ts){setError('أكمل التحقق أولاً حتى تتمكن من تفعيل الكود');return;}
   const c=String($('#key')?.value||'').replace(/-/g,'').toUpperCase();
-  if(c.length<15){setError('أدخل مفتاح الترخيص كاملاً.');if(window.CR7TS)CR7TS.reset();return;}
+  if(c.length<15){setError('أدخل مفتاح الترخيص كاملاً.');return;}
   const h=hwidRaw();
-  if(!h){setError('المتصفح لا يسمح بحفظ البيانات.');if(window.CR7TS)CR7TS.reset();return;}
+  if(!h){setError('المتصفح لا يسمح بحفظ البيانات.');return;}
   busyState(true);setError('');
   try{
-    const d=await redeem(c,h,ts);
+    const d=await redeem(c,h,'');
     code=c;hw=h;stop();apply(d);
     openApp();fillInfo();
     heartbeat=setInterval(tick,1000);
     syncT=setInterval(resync,60000);
   }catch(err){setError(err.message||'فشل التحقق من المفتاح.');}
-  finally{busyState(false);if(window.CR7TS)CR7TS.reset();}
+  finally{busyState(false);}
 },true);
 document.addEventListener('click',e=>{if(e.target.closest('#logout')){stop();code='';left=0;clearLinks();}},true);
 })();

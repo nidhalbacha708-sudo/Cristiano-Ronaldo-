@@ -4,12 +4,17 @@ const path = require('path');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DB_FILE = path.join(__dirname, 'db.json');
+
+// كلمة مرور لوحة الإدارة (غيّرها كما تشاء أو أضف ADMIN_PASS في إعدادات Railway)
+const ADMIN_PASSWORD = process.env.ADMIN_PASS || "CR7ADMIN2026";
+
+// مسار حفظ البيانات: يدعم قرص التخزين الدائم في Railway (/data) أو المجلد الحالي
+const DATA_DIR = process.env.DATA_DIR || (fs.existsSync('/data') ? '/data' : __dirname);
+const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// قراءة وحفظ قاعدة البيانات في ملف db.json
 function loadDB() {
     try {
         if (fs.existsSync(DB_FILE)) {
@@ -45,6 +50,9 @@ function loadDB() {
 
 function saveDB(data) {
     try {
+        if (!fs.existsSync(DATA_DIR)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+        }
         fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
     } catch (e) {
         console.error('DB Save Error:', e);
@@ -53,7 +61,15 @@ function saveDB(data) {
 
 let db = loadDB();
 
-// السماح بقراءة الملفات من المجلد الرئيسي ومجلد public
+// بوابة التحقق من كلمة مرور الإدارة لجميع مسارات /api/admin
+function requireAdmin(req, res, next) {
+    const pass = req.headers['x-admin-pass'] || req.body.adminPass;
+    if (pass !== ADMIN_PASSWORD) {
+        return res.status(401).json({ success: false, error: "كلمة مرور الإدارة غير صحيحة!" });
+    }
+    next();
+}
+
 app.use(express.static(__dirname));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -65,7 +81,7 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
-// 1. مسار الصيانة المتوافق مع index.html
+// 1. مسار حالة الصيانة
 app.get('/api/maint', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json({
@@ -74,7 +90,7 @@ app.get('/api/maint', (req, res) => {
     });
 });
 
-// 2. مسار التحقق من المفتاح وربط الجهاز المتوافق مع index.html
+// 2. مسار التحقق من المفتاح وربط الجهاز
 app.post('/api/redeem', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
 
@@ -124,18 +140,18 @@ app.post('/api/redeem', (req, res) => {
     });
 });
 
-// 3. جلب الإعدادات للوحة التحكم admin.html
-app.get('/api/admin/settings', (req, res) => {
+// 3. مسارات لوحة الإدارة (محمية بكلمة المرور)
+app.get('/api/admin/settings', requireAdmin, (req, res) => {
     res.json({
         success: true,
         maint: db.maint,
         links: db.links,
-        keys: Object.values(db.keys)
+        keys: Object.values(db.keys),
+        storagePath: DB_FILE
     });
 });
 
-// 4. توليد كود جديد
-app.post('/api/admin/generate', (req, res) => {
+app.post('/api/admin/generate', requireAdmin, (req, res) => {
     const hours = parseFloat(req.body.hours) || 1;
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const part = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -155,8 +171,7 @@ app.post('/api/admin/generate', (req, res) => {
     res.json({ success: true, key: formattedKey, hours });
 });
 
-// 5. تحديث الصيانة
-app.post('/api/admin/maintenance', (req, res) => {
+app.post('/api/admin/maintenance', requireAdmin, (req, res) => {
     db.maint.on = !!req.body.on;
     if (typeof req.body.msg === 'string' && req.body.msg.trim()) {
         db.maint.msg = req.body.msg.trim();
@@ -165,8 +180,7 @@ app.post('/api/admin/maintenance', (req, res) => {
     res.json({ success: true, maint: db.maint });
 });
 
-// 6. حفظ روابط Happ
-app.post('/api/admin/links', (req, res) => {
+app.post('/api/admin/links', requireAdmin, (req, res) => {
     const incoming = req.body.links || {};
     Object.keys(db.links).forEach(k => {
         if (typeof incoming[k] === 'string') {
@@ -177,8 +191,7 @@ app.post('/api/admin/links', (req, res) => {
     res.json({ success: true, links: db.links });
 });
 
-// 7. حذف كود أو فك الجهاز
-app.post('/api/admin/key-action', (req, res) => {
+app.post('/api/admin/key-action', requireAdmin, (req, res) => {
     const rawCode = String(req.body.code || '').replace(/-/g, '').toUpperCase();
     const action = req.body.action;
 
@@ -195,6 +208,21 @@ app.post('/api/admin/key-action', (req, res) => {
     res.json({ success: true });
 });
 
+// تصدير واستيراد نسخة احتياطية كاملة (Backup / Restore)
+app.get('/api/admin/backup', requireAdmin, (req, res) => {
+    res.json({ success: true, backup: db });
+});
+
+app.post('/api/admin/restore', requireAdmin, (req, res) => {
+    const incoming = req.body.backup;
+    if (!incoming || typeof incoming !== 'object' || !incoming.keys || !incoming.links) {
+        return res.json({ success: false, error: "ملف النسخة الاحتياطية غير صالح!" });
+    }
+    db = incoming;
+    saveDB(db);
+    res.json({ success: true });
+});
+
 app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`CR7 Server running on port ${PORT} | DB: ${DB_FILE}`);
 });
